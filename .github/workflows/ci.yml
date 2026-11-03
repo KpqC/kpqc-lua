@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            lua: "5.1"
+            packages: lua5.1 liblua5.1-0-dev
+            command: lua5.1
+          - os: ubuntu-24.04
+            lua: "5.2"
+            packages: lua5.2 liblua5.2-dev
+            command: lua5.2
+          - os: ubuntu-24.04
+            lua: "5.3"
+            packages: lua5.3 liblua5.3-dev
+            command: lua5.3
+          - os: ubuntu-24.04
+            lua: "5.4"
+            packages: lua5.4 liblua5.4-dev
+            command: lua5.4
+          - os: macos-15
+            lua: "5.4"
+            formula: lua@5.4
+            command: lua
+          - os: macos-15
+            lua: "5.5"
+            formula: lua
+            command: lua
+    runs-on: ${{ matrix.os }}
+    name: Lua ${{ matrix.lua }} on ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Lua on Linux
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ matrix.packages }}
+      - name: Install Lua on macOS
+        if: runner.os == 'macOS'
+        run: |
+          brew install ${{ matrix.formula }}
+          echo "$(brew --prefix ${{ matrix.formula }})/bin" >> "$GITHUB_PATH"
+          echo "CMAKE_PREFIX_PATH=$(brew --prefix ${{ matrix.formula }})" >> "$GITHUB_ENV"
+      - name: Build
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel
+      - name: Test API
+        env:
+          LUA_CPATH: ${{ github.workspace }}/build/?.so;;
+        run: ${{ matrix.command }} test/api.lua
+
+  known-answer-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
+        with:
+          repository: KpqC/kpqc-test-vectors
+          ref: d75490bf824faa4b148cd0b901a2eb13198fe0da
+          path: kpqc-test-vectors
+      - name: Install Lua
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lua5.4 liblua5.4-dev
+      - name: Build with deterministic entropy hooks
+        run: |
+          cmake -S . -B build-kat \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DKPQC_TEST_ENTROPY=ON
+          cmake --build build-kat --parallel
+      - name: Validate all known-answer vectors
+        env:
+          KPQC_TEST_VECTORS: ${{ github.workspace }}/kpqc-test-vectors
+          LUA_CPATH: ${{ github.workspace }}/build-kat/?.so;;
+        run: lua5.4 test/kat.lua

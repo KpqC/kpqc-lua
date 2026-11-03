@@ -1,0 +1,5 @@
+/build/
+/build-*/
+/build.luarocks/
+*.rock
+*.src.rock
